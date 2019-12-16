@@ -492,7 +492,7 @@ error:
 	Remarks: a lot of code is from TrueCrypt 'Common\Password.c' :: ChangePwd()
 
 */
-static int ExpandVolume (HWND hwndDlg, wchar_t *lpszVolume, Password *pVolumePassword, int VolumePkcs5, int VolumePim, uint64 newHostSize, BOOL initFreeSpace)
+static int ExpandVolume (HWND hwndDlg, wchar_t *lpszVolume, Password *pVolumePassword, int VolumePkcs5, int VolumePim, uint64 newHostSize, BOOL initFreeSpace, BOOL bQuickExpand)
 {
 	int nDosLinkCreated = 1, nStatus = ERR_OS_ERROR;
 	wchar_t szDiskFile[TC_MAX_PATH], szCFDevice[TC_MAX_PATH];
@@ -535,6 +535,27 @@ static int ExpandVolume (HWND hwndDlg, wchar_t *lpszVolume, Password *pVolumePas
 
 	if (dev == INVALID_HANDLE_VALUE)
 		goto error;
+	else if (!bDevice && bPreserveTimestamp)
+	{
+		// ensure that Last Access and Last Time timestamps are not modified
+		// in order to preserve plausible deniability of hidden volumes (last password change time is stored in the volume header).
+		ftLastAccessTime.dwHighDateTime = 0xFFFFFFFF;
+		ftLastAccessTime.dwLowDateTime = 0xFFFFFFFF;
+
+		SetFileTime (dev, NULL, &ftLastAccessTime, NULL);
+
+		/* Remember the container modification/creation date and time, (used to reset file date and time of
+		file-hosted volumes after password change (or attempt to), in order to preserve plausible deniability
+		of hidden volumes (last password change time is stored in the volume header). */
+
+		if (GetFileTime ((HANDLE) dev, &ftCreationTime, &ftLastAccessTime, &ftLastWriteTime) == 0)
+		{
+			bTimeStampValid = FALSE;
+			MessageBoxW (hwndDlg, GetString ("GETFILETIME_FAILED_PW"), lpszTitle, MB_OK | MB_ICONEXCLAMATION);
+		}
+		else
+			bTimeStampValid = TRUE;
+	}
 
 	if (bDevice)
 	{
@@ -628,20 +649,6 @@ static int ExpandVolume (HWND hwndDlg, wchar_t *lpszVolume, Password *pVolumePas
 		goto error;
 	}
 
-	if (!bDevice && bPreserveTimestamp)
-	{
-		/* Remember the container modification/creation date and time, (used to reset file date and time of
-		file-hosted volumes after password change (or attempt to), in order to preserve plausible deniability
-		of hidden volumes (last password change time is stored in the volume header). */
-
-		if (GetFileTime ((HANDLE) dev, &ftCreationTime, &ftLastAccessTime, &ftLastWriteTime) == 0)
-		{
-			bTimeStampValid = FALSE;
-			MessageBoxW (hwndDlg, GetString ("GETFILETIME_FAILED_PW"), lpszTitle, MB_OK | MB_ICONEXCLAMATION);
-		}
-		else
-			bTimeStampValid = TRUE;
-	}
 
 	// Seek the volume header
 	headerOffset.QuadPart = TC_VOLUME_HEADER_OFFSET;
@@ -750,13 +757,37 @@ static int ExpandVolume (HWND hwndDlg, wchar_t *lpszVolume, Password *pVolumePas
 
 		liNewSize.QuadPart=(LONGLONG)newHostSize;
 
-		// Preallocate the file
-		if (!SetFilePointerEx (dev, liNewSize, NULL, FILE_BEGIN)
-			|| !SetEndOfFile (dev)
-			|| SetFilePointer (dev, 0, NULL, FILE_BEGIN) != 0)
+		if (hostSize != newHostSize)
 		{
-			nStatus = ERR_OS_ERROR;
-			goto error;
+			// Preallocate the file
+			if (!SetFilePointerEx (dev, liNewSize, NULL, FILE_BEGIN)
+				|| !SetEndOfFile (dev))
+			{
+				nStatus = ERR_OS_ERROR;
+				goto error;
+			}
+
+			if (bQuickExpand)
+			{
+				if (!SetFileValidData (dev, liNewSize.QuadPart))
+				{
+					DebugAddProgressDlgStatus(hwndDlg, L"Warning: Failed to perform Quick Expand. Continuing with standard expanding...\r\n");
+				}
+			}
+
+			if (SetFilePointer (dev, 0, NULL, FILE_BEGIN) != 0)
+			{
+				nStatus = ERR_OS_ERROR;
+				goto error;
+			}
+		}
+		else
+		{
+			if (SetFilePointer (dev, 0, NULL, FILE_BEGIN) != 0)
+			{
+				nStatus = ERR_OS_ERROR;
+				goto error;
+			}
 		}
 	}
 
@@ -1050,7 +1081,7 @@ void __cdecl volTransformThreadFunction (void *pExpandDlgParam)
 	HWND hwndDlg = (HWND) pParam->hwndDlg;
 
 	nStatus = ExpandVolume (hwndDlg, (wchar_t*)pParam->szVolumeName, pParam->pVolumePassword,
-		pParam->VolumePkcs5, pParam->VolumePim, pParam->newSize, pParam->bInitFreeSpace );
+		pParam->VolumePkcs5, pParam->VolumePim, pParam->newSize, pParam->bInitFreeSpace, pParam->bQuickExpand );
 
 	if (nStatus!=ERR_SUCCESS && nStatus!=ERR_USER_ABORT)
 			handleError (hwndDlg, nStatus, SRC_POS);

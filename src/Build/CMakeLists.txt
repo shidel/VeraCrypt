@@ -10,6 +10,11 @@ elseif ( NOT DEFINED NOGUI )
 	MESSAGE(FATAL_ERROR "NOGUI variable MUST BE set to TRUE if building 'Console' version, 'FALSE' otherwise")
 endif()
 
+# - Set version of the package
+set( FULL_VERSION 		"1.24-Update2" )
+set( VERSION 			"1.24.10" )
+set( RELEASE 			"1" )
+
 # - Set PROJECT_NAME and CONFLICT_PACKAGE values
 if (NOGUI)
 	set( PROJECT_NAME 		"veracrypt-console" )
@@ -206,21 +211,6 @@ set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
 
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/Packaging)	# creates the Packaging directory under build directory when CMake generates the build system
 
-# - We excute 'grep VERSION_STRING ../../Common/Tcdefs.h | head -n 1' to get the line which include 'VERSION_STRING'
-#	Then we delete all first characters from the beginning of the line until the first '"' to get the version in the format : "X.YYY..."
-#	Then, we remove the leading and trailing '"' characters
-#	Then, we retrieve the 'version' and the 'release'
-#	Finally, we replace '-' in the release if it exists with a '.' because CPack does not like '-' in the release
-execute_process(COMMAND grep VERSION_STRING "$ENV{SOURCEPATH}/Common/Tcdefs.h"
-				COMMAND head -n 1
-				OUTPUT_VARIABLE FULL_VERSION_LINE OUTPUT_STRIP_TRAILING_WHITESPACE)
-string(REGEX REPLACE "^[^\"]+" "" FULL_VERSION ${FULL_VERSION_LINE})
-string(REGEX REPLACE "\"" "" FULL_VERSION ${FULL_VERSION})
-string(REPLACE "." ";" FULL_VERSION_LIST ${FULL_VERSION})
-list(GET FULL_VERSION_LIST 0 VERSION)
-list(GET FULL_VERSION_LIST 1 RELEASE)
-string(REPLACE "-" "." RELEASE ${RELEASE})
-
 set( VENDOR "IDRIX" )
 set( LICENSE "VeraCrypt License" )
 set( CONTACT "VeraCrypt Team <veracrypt@idrix.fr>" )
@@ -257,11 +247,11 @@ if ( ( PLATFORM STREQUAL "Debian" ) OR ( PLATFORM STREQUAL "Ubuntu" ) )
 	if ( ( ( PLATFORM STREQUAL "Debian" ) AND ( PLATFORM_VERSION VERSION_GREATER_EQUAL "10" ) ) 
 		OR ( ( PLATFORM STREQUAL "Ubuntu" ) AND ( PLATFORM_VERSION VERSION_GREATER_EQUAL "18.04" ) ) )
 		
-		set( CPACK_DEBIAN_PACKAGE_DEPENDS 		"libwxgtk3.0-gtk3-0v5, libfuse2, dmsetup" )										
+		set( CPACK_DEBIAN_PACKAGE_DEPENDS 		"libwxgtk3.0-gtk3-0v5, libfuse2, dmsetup, sudo" )										
 		
 	else ()
 	
-		set( CPACK_DEBIAN_PACKAGE_DEPENDS 		"libwxgtk3.0-0v5, libfuse2, dmsetup" )
+		set( CPACK_DEBIAN_PACKAGE_DEPENDS 		"libwxgtk3.0-0v5, libfuse2, dmsetup, sudo" )
 		
 	endif()
 		
@@ -297,15 +287,14 @@ elseif ( ( PLATFORM STREQUAL "CentOS" ) OR ( PLATFORM STREQUAL "openSUSE" ) )
 	if ( PLATFORM STREQUAL "CentOS" )
 			
 		if ( DEFINED WITHGTK3 AND WITHGTK3 )
-			set( CPACK_RPM_PACKAGE_REQUIRES 	"fuse, device-mapper, gtk3" )
+			set( CPACK_RPM_PACKAGE_REQUIRES 	"fuse, device-mapper, gtk3, sudo" )
 		else ()
-			set( CPACK_RPM_PACKAGE_REQUIRES 	"fuse, device-mapper, gtk2" )
+			set( CPACK_RPM_PACKAGE_REQUIRES 	"fuse, device-mapper, gtk2, sudo" )
 		endif()
 		
 	elseif ( PLATFORM STREQUAL "openSUSE" )
 		
-		#	TODO
-	
+		set( CPACK_RPM_PACKAGE_REQUIRES 	"fuse, device-mapper, gtk2, sudo" )
 	endif()
 	
 	set( CPACK_RPM_PRE_UNINSTALL_SCRIPT_FILE 			${RPM_PRERM})															# optional
